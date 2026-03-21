@@ -228,6 +228,27 @@ function App(){
   const [winForm,setWinForm]=useState({});
   const [seedForm,setSeedForm]=useState({});
 
+  function exportCSV(type) {
+    let rows, filename;
+    if (type === "wins") {
+      filename = `wins_${CURRENT_YEAR}_${today()}.csv`;
+      rows = [["Rep","Client","What was sold","Revenue","Date","Notes","Year"],
+        ...wins.map(w=>[w.salesperson,w.notes||"",w.item,w.revenue,w.date,w.extra_notes||"",w.year]),
+        ...archivedWins.map(w=>[w.salesperson,w.notes||"",w.item,w.revenue,w.date,w.extra_notes||"",w.year])
+      ];
+    } else {
+      filename = `seeds_${today()}.csv`;
+      rows = [["Rep","Client","What was proposed","Price","Timeframe","Notes"],
+        ...seeds.map(s=>[s.salesperson,s.client||"",s.item,s.price||"",s.timeframe,s.notes||""])
+      ];
+    }
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+    a.download = filename;
+    a.click();
+  }
+
   const isAdmin=currentUser?.isAdmin;
   const activeSpNames=salespeople.filter(sp=>!sp.retired).map(sp=>sp.name);
   const emptyWin={salesperson:currentUser?.name||"",item:"",revenue:"",date:today(),notes:"",extraNotes:"",year:CURRENT_YEAR};
@@ -543,7 +564,11 @@ function App(){
               </div>;
             })}
           </div>}
-          {isAdmin&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:32,paddingTop:16,borderTop:"1px solid #d3d1c7"}}>
+          {isAdmin&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:32,paddingTop:16,borderTop:"1px solid #d3d1c7",flexWrap:"wrap",gap:10}}>
+            <div style={{display:"flex",gap:8}}>
+              <Btn variant="secondary" onClick={()=>exportCSV("wins")}>⬇ Export wins</Btn>
+              <Btn variant="secondary" onClick={()=>exportCSV("seeds")}>⬇ Export seeds</Btn>
+            </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:12,color:"#73726c"}}>Retire a rep:</span>
               <select defaultValue="" onChange={e=>{if(!e.target.value)return;setRetireModal({name:e.target.value,step:1});setRetirePin("");setRetirePinErr("");e.target.value="";}}
