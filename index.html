@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sales HQ — Premier Ponds</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f0;color:#2c2c2a;min-height:100vh;}
+  #root{max-width:960px;margin:0 auto;padding:24px 16px;}
+  :root{
+    --bg:#ffffff;--bg2:#f1efe8;--bg3:#f5f4f0;
+    --text:#2c2c2a;--text2:#73726c;--text3:#9c9a92;
+    --border:#d3d1c7;--border2:#b4b2a9;
+    --radius:10px;--radius-sm:7px;
+  }
+  input,select,textarea{font-family:inherit;}
+  table{width:100%;border-collapse:collapse;}
+  th,td{text-align:left;}
+  button{font-family:inherit;cursor:pointer;}
+  mark{background:#EF9F2755;border-radius:2px;padding:0 1px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo,useEffect,useCallback} = React;
+
+const SUPABASE_URL = "https://srneloompcpxybzilhrh.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNybmVsb29tcGNweHliemlsaHJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNDc1MTgsImV4cCI6MjA4OTYyMzUxOH0.eCU4pp1MYdA1EYBYvDEwvmBPRZO3RpMnNG8MyOaqsNE";
+const ADMIN_PIN = "7777";
+const SIX_MONTHS_MS = 6*30*24*60*60*1000;
+const CURRENT_YEAR = new Date().getFullYear();
+
+const db = {
+  async get(table){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*&order=id.asc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async insert(table,row){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(row)});
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async update(table,id,row){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(row)});
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async del(table,id){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+    if(!r.ok) throw new Error(await r.text());
+  }
+};
+
+const fmt = n => !n?"—":n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n}`;
+const fmtFull = n => !n?"—":`$${Number(n).toLocaleString()}`;
+const today = () => new Date().toISOString().slice(0,10);
+const isActive = (sp,wins) => {
+  const w = wins.filter(w=>w.salesperson===sp.name&&w.year===CURRENT_YEAR);
+  if(!w.length) return false;
+  return Date.now()-Math.max(...w.map(w=>new Date(w.date).getTime()))<SIX_MONTHS_MS;
+};
+
+function hl(text,q){
+  if(!q||!text) return text;
+  const i=text.toLowerCase().indexOf(q.toLowerCase());
+  if(i===-1) return text;
+  return React.createElement(React.Fragment,null,text.slice(0,i),React.createElement("mark",null,text.slice(i,i+q.length)),text.slice(i+q.length));
+}
+
+const dkIn = {width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid #444",background:"#2a2a2a",color:"#fff",fontSize:14,boxSizing:"border-box"};
+
+function DField({label,children}){
+  return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:500,marginBottom:5,color:"#aaa"}}>{label}</label>{children}</div>;
+}
+
+function Modal({title,onClose,children,dark=true}){
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}}>
+      <div style={{background:dark?"#1a1a1a":"#fff",border:dark?"1px solid #333":"1px solid #d3d1c7",borderRadius:14,padding:28,width:"min(500px,100%)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <h2 style={{margin:0,fontSize:18,fontWeight:500,color:dark?"#fff":"#2c2c2a"}}>{title}</h2>
+          {onClose&&<button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:dark?"#aaa":"#73726c",lineHeight:1}}>×</button>}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Btn({variant="primary",children,style:s,...props}){
+  const vs={
+    primary:{background:"#534AB7",color:"#fff",border:"none"},
+    secondary:{background:"#f1efe8",color:"#2c2c2a",border:"1px solid #d3d1c7"},
+    ghost:{background:"transparent",color:"#73726c",border:"none"},
+    danger:{background:"#E24B4A18",color:"#E24B4A",border:"1px solid #E24B4A44"},
+    win:{background:"#63992218",color:"#3B6D11",border:"1px solid #63992244"},
+    warn:{background:"#EF9F2718",color:"#854F0B",border:"1px solid #EF9F2744"},
+  };
+  return <button {...props} style={{...vs[variant],borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:500,cursor:"pointer",...s}}>{children}</button>;
+}
+
+function LoginScreen({salespeople,onLogin,onAdminLogin}){
+  const [step,setStep]=useState("select");
+  const [selected,setSelected]=useState(null);
+  const [pin,setPin]=useState("");
+  const [confirm,setConfirm]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const active=salespeople.filter(sp=>!sp.retired);
+
+  function sel(sp){setSelected(sp);setPin("");setConfirm("");setErr("");setStep(sp.pin?"enter":"setup");}
+
+  async function doSetup(){
+    if(pin.length<4){setErr("PIN must be at least 4 digits.");return;}
+    if(pin!==confirm){setErr("PINs do not match.");return;}
+    if(pin===ADMIN_PIN){setErr("That PIN is reserved.");return;}
+    setLoading(true);
+    try{await onLogin(selected,pin,true);}catch(e){setErr("Error saving. Try again.");setLoading(false);}
+  }
+
+  function doEnter(){
+    if(pin===ADMIN_PIN){onAdminLogin();return;}
+    if(pin===selected.pin){onLogin(selected,pin,false);return;}
+    setErr("Incorrect PIN.");
+  }
+
+  function doAdmin(){
+    if(pin===ADMIN_PIN){onAdminLogin();return;}
+    setErr("Incorrect admin PIN.");
+  }
+
+  const inStyle={width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #d3d1c7",background:"#fff",color:"#2c2c2a",fontSize:14,boxSizing:"border-box"};
+
+  return (
+    <div style={{minHeight:"80vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{width:"min(400px,100%)"}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <h1 style={{fontSize:28,fontWeight:600,marginBottom:6}}>Sales HQ</h1>
+          <p style={{color:"#73726c",fontSize:14}}>Premier Ponds — Select your name to continue</p>
+        </div>
+
+        {step==="select"&&<>
+          <div style={{display:"grid",gap:8,marginBottom:20}}>
+            {active.map(sp=>(
+              <button key={sp.id} onClick={()=>sel(sp)} style={{padding:"13px 16px",borderRadius:10,border:"1px solid #d3d1c7",background:"#fff",color:"#2c2c2a",fontSize:15,fontWeight:500,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#534AB7"} onMouseLeave={e=>e.currentTarget.style.borderColor="#d3d1c7"}>
+                {sp.name}<span style={{fontSize:12,color:"#9c9a92"}}>{sp.pin?"Enter PIN →":"Set up PIN →"}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{borderTop:"1px solid #d3d1c7",paddingTop:16}}>
+            <p style={{fontSize:12,color:"#9c9a92",marginBottom:8,textAlign:"center"}}>Admin access</p>
+            <div style={{display:"flex",gap:8}}>
+              <input type="password" placeholder="Admin PIN" value={pin} onChange={e=>{setPin(e.target.value);setErr("");}} style={{...inStyle,flex:1}} onKeyDown={e=>e.key==="Enter"&&doAdmin()}/>
+              <Btn onClick={doAdmin}>Enter</Btn>
+            </div>
+            {err&&<p style={{color:"#E24B4A",fontSize:12,marginTop:6}}>{err}</p>}
+          </div>
+        </>}
+
+        {step==="setup"&&(
+          <div style={{background:"#fff",borderRadius:12,padding:24,border:"1px solid #d3d1c7"}}>
+            <p style={{fontWeight:600,marginBottom:4,fontSize:16}}>Welcome, {selected.name}!</p>
+            <p style={{fontSize:13,color:"#73726c",marginBottom:20}}>First time here — set a PIN you'll use to log in.</p>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:500,marginBottom:5,color:"#73726c"}}>Choose a PIN (4+ digits)</label>
+              <input type="password" value={pin} onChange={e=>{setPin(e.target.value);setErr("");}} placeholder="e.g. 1234" style={inStyle} autoFocus/>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:500,marginBottom:5,color:"#73726c"}}>Confirm PIN</label>
+              <input type="password" value={confirm} onChange={e=>{setConfirm(e.target.value);setErr("");}} placeholder="Re-enter PIN" style={inStyle} onKeyDown={e=>e.key==="Enter"&&doSetup()}/>
+            </div>
+            {err&&<p style={{color:"#E24B4A",fontSize:13,margin:"-6px 0 10px"}}>{err}</p>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn variant="secondary" onClick={()=>{setStep("select");setPin("");setConfirm("");setErr("");}}>Back</Btn>
+              <Btn onClick={doSetup} disabled={loading}>{loading?"Saving...":"Set PIN & Enter"}</Btn>
+            </div>
+          </div>
+        )}
+
+        {step==="enter"&&(
+          <div style={{background:"#fff",borderRadius:12,padding:24,border:"1px solid #d3d1c7"}}>
+            <p style={{fontWeight:600,marginBottom:16,fontSize:16}}>Welcome back, {selected.name}</p>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:500,marginBottom:5,color:"#73726c"}}>Enter your PIN</label>
+              <input type="password" value={pin} onChange={e=>{setPin(e.target.value);setErr("");}} placeholder="PIN" autoFocus style={inStyle} onKeyDown={e=>e.key==="Enter"&&doEnter()}/>
+            </div>
+            {err&&<p style={{color:"#E24B4A",fontSize:13,margin:"-6px 0 10px"}}>{err}</p>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn variant="secondary" onClick={()=>{setStep("select");setPin("");setErr("");}}>Back</Btn>
+              <Btn onClick={doEnter}>Enter</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [salespeople,setSalespeople]=useState([]);
+  const [wins,setWins]=useState([]);
+  const [seeds,setSeeds]=useState([]);
+  const [archivedWins,setArchivedWins]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [dbError,setDbError]=useState(null);
+  const [currentUser,setCurrentUser]=useState(null);
+  const [tab,setTab]=useState("leaderboard");
+  const [expanded,setExpanded]=useState({});
+  const [archiveExpanded,setArchiveExpanded]=useState({});
+  const [search,setSearch]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [winModal,setWinModal]=useState(null);
+  const [seedModal,setSeedModal]=useState(null);
+  const [addSpModal,setAddSpModal]=useState(false);
+  const [retireModal,setRetireModal]=useState(null);
+  const [archiveEditConfirm,setArchiveEditConfirm]=useState(null);
+  const [deleteConfirm,setDeleteConfirm]=useState(null);
+  const [newSpName,setNewSpName]=useState("");
+  const [retirePin,setRetirePin]=useState("");
+  const [retirePinErr,setRetirePinErr]=useState("");
+  const [winForm,setWinForm]=useState({});
+  const [seedForm,setSeedForm]=useState({});
+
+  const isAdmin=currentUser?.isAdmin;
+  const activeSpNames=salespeople.filter(sp=>!sp.retired).map(sp=>sp.name);
+  const emptyWin={salesperson:currentUser?.name||"",item:"",revenue:"",date:today(),notes:"",extraNotes:"",year:CURRENT_YEAR};
+  const emptySeed={salesperson:currentUser?.name||"",client:"",item:"",price:"",timeframe:"",notes:""};
+
+  const loadAll=useCallback(async()=>{
+    setLoading(true);setDbError(null);
+    try{
+      const [sp,w,s,aw]=await Promise.all([db.get("salespeople"),db.get("wins"),db.get("seeds"),db.get("archived_wins")]);
+      setSalespeople(sp);setWins(w);setSeeds(s);setArchivedWins(aw);
+    }catch(e){setDbError(e.message);}
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{loadAll();},[loadAll]);
+
+  const stats=useMemo(()=>{
+    const cw=wins.filter(w=>w.year===CURRENT_YEAR);
+    return salespeople.filter(sp=>!sp.retired).map(sp=>{
+      const sw=cw.filter(w=>w.salesperson===sp.name);
+      const ss=seeds.filter(s=>s.salesperson===sp.name);
+      return{name:sp.name,wins:sw,seeds:ss,totalRev:sw.reduce((a,w)=>a+(Number(w.revenue)||0),0),wonCount:sw.length,pipeline:ss.reduce((a,s)=>a+(Number(s.price)||0),0),active:isActive(sp,wins)};
+    }).filter(r=>r.active).sort((a,b)=>b.totalRev-a.totalRev||b.wonCount-a.wonCount||a.name.localeCompare(b.name));
+  },[wins,seeds,salespeople]);
+
+  const archivedMap=useMemo(()=>{
+    const m={};
+    archivedWins.forEach(w=>{if(!m[w.salesperson])m[w.salesperson]={};if(!m[w.salesperson][w.year])m[w.salesperson][w.year]=[];m[w.salesperson][w.year].push(w);});
+    return m;
+  },[archivedWins]);
+
+  const currentWins=wins.filter(w=>w.year===CURRENT_YEAR);
+  const totalRev=currentWins.reduce((a,w)=>a+(Number(w.revenue)||0),0);
+  const totalPipeline=seeds.reduce((a,s)=>a+(Number(s.price)||0),0);
+  const maxRev=Math.max(...stats.map(s=>s.totalRev),1);
+
+  const searchResults=useMemo(()=>{
+    if(!search.trim()) return null;
+    const q=search.toLowerCase();
+    return{
+      wins:wins.filter(w=>w.item?.toLowerCase().includes(q)||w.notes?.toLowerCase().includes(q)||w.salesperson?.toLowerCase().includes(q)),
+      seeds:seeds.filter(s=>s.client?.toLowerCase().includes(q)||s.item?.toLowerCase().includes(q)||s.salesperson?.toLowerCase().includes(q)||s.notes?.toLowerCase().includes(q)),
+    };
+  },[search,wins,seeds]);
+
+  function tog(k){setExpanded(e=>({...e,[k]:!e[k]}));}
+  function togA(k){setArchiveExpanded(e=>({...e,[k]:!e[k]}));}
+  function canEdit(sp){return isAdmin||currentUser?.name===sp;}
+
+  async function handleLogin(sp,pin,isFirst){
+    if(isFirst){await db.update("salespeople",sp.id,{pin});setSalespeople(p=>p.map(x=>x.id===sp.id?{...x,pin}:x));}
+    setCurrentUser({name:sp.name,isAdmin:false});
+  }
+  function handleAdminLogin(){setCurrentUser({name:"Admin",isAdmin:true});}
+  function handleLogout(){setCurrentUser(null);setTab("leaderboard");setSearch("");}
+
+  async function saveWin(){
+    const e={};
+    if(!winForm.notes?.trim())e.clientError=true;
+    if(!winForm.revenue)e.revenueError=true;
+    if(!winForm.item?.trim())e.itemError=true;
+    if(Object.keys(e).length){setWinForm(f=>({...f,...e}));return;}
+    setSaving(true);
+    try{
+      if(winModal.mode==="add"){
+        const [row]=await db.insert("wins",{salesperson:winForm.salesperson,item:winForm.item,revenue:Number(winForm.revenue)||0,date:winForm.date,notes:winForm.notes,extra_notes:winForm.extraNotes||"",year:CURRENT_YEAR});
+        setWins(p=>[...p,row]);
+      }else{
+        await db.update("wins",winModal.id,{item:winForm.item,revenue:Number(winForm.revenue)||0,date:winForm.date,notes:winForm.notes,extra_notes:winForm.extraNotes||""});
+        setWins(p=>p.map(x=>x.id===winModal.id?{...x,...winForm,revenue:Number(winForm.revenue)||0}:x));
+      }
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);setWinModal(null);
+  }
+
+  async function saveArchiveEdit(){
+    setSaving(true);
+    try{
+      await db.update("archived_wins",winModal.id,{item:winForm.item,revenue:Number(winForm.revenue)||0,date:winForm.date,notes:winForm.notes,extra_notes:winForm.extraNotes||""});
+      setArchivedWins(p=>p.map(x=>x.id===winModal.id?{...x,...winForm,revenue:Number(winForm.revenue)||0}:x));
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);setWinModal(null);
+  }
+
+  async function saveSeed(){
+    const e={};
+    if(!seedForm.client?.trim())e.clientError=true;
+    if(!seedForm.item?.trim())e.itemError=true;
+    if(!seedForm.timeframe?.trim())e.timeframeError=true;
+    if(Object.keys(e).length){setSeedForm(f=>({...f,...e}));return;}
+    setSaving(true);
+    try{
+      if(seedModal.mode==="add"){
+        const [row]=await db.insert("seeds",{salesperson:seedForm.salesperson,client:seedForm.client,item:seedForm.item,price:Number(seedForm.price)||0,timeframe:seedForm.timeframe,notes:seedForm.notes||""});
+        setSeeds(p=>[...p,row]);
+      }else{
+        await db.update("seeds",seedModal.id,{client:seedForm.client,item:seedForm.item,price:Number(seedForm.price)||0,timeframe:seedForm.timeframe,notes:seedForm.notes||""});
+        setSeeds(p=>p.map(x=>x.id===seedModal.id?{...x,...seedForm,price:Number(seedForm.price)||0}:x));
+      }
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);setSeedModal(null);
+  }
+
+  async function addSalesperson(){
+    if(!newSpName.trim()) return;
+    setSaving(true);
+    try{const [row]=await db.insert("salespeople",{name:newSpName.trim(),added_date:today(),retired:false,pin:null});setSalespeople(p=>[...p,row]);}
+    catch(e){alert("Error: "+e.message);}
+    setSaving(false);setNewSpName("");setAddSpModal(false);
+  }
+
+  async function retireSalesperson(name){
+    if(retirePin!==ADMIN_PIN){setRetirePinErr("Incorrect PIN.");return;}
+    setSaving(true);
+    try{
+      const tw=wins.filter(w=>w.salesperson===name);
+      for(const w of tw){await db.insert("archived_wins",{salesperson:w.salesperson,item:w.item,revenue:w.revenue,date:w.date,notes:w.notes,extra_notes:w.extra_notes||"",year:w.year});await db.del("wins",w.id);}
+      const ts=seeds.filter(s=>s.salesperson===name);
+      for(const s of ts) await db.del("seeds",s.id);
+      const sp=salespeople.find(s=>s.name===name);
+      await db.update("salespeople",sp.id,{retired:true});
+      await loadAll();
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);setRetireModal(null);setRetirePin("");setRetirePinErr("");
+  }
+
+  async function confirmDelete(){
+    setSaving(true);
+    try{
+      if(deleteConfirm.type==="win"){await db.del("wins",deleteConfirm.id);setWins(p=>p.filter(w=>w.id!==deleteConfirm.id));}
+      else{await db.del("seeds",deleteConfirm.id);setSeeds(p=>p.filter(s=>s.id!==deleteConfirm.id));}
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);setDeleteConfirm(null);
+  }
+
+  if(loading) return <div style={{textAlign:"center",padding:80,color:"#73726c",fontSize:15}}>Loading...</div>;
+  if(dbError) return <div style={{textAlign:"center",padding:80}}><p style={{color:"#E24B4A",fontWeight:500,marginBottom:8}}>Could not connect to database</p><p style={{fontSize:13,color:"#73726c",marginBottom:20}}>{dbError}</p><Btn onClick={loadAll}>Retry</Btn></div>;
+  if(!currentUser) return <LoginScreen salespeople={salespeople} onLogin={handleLogin} onAdminLogin={handleAdminLogin}/>;
+
+  const th={padding:"8px 14px",textAlign:"left",fontWeight:500,color:"#73726c",fontSize:12,borderBottom:"1px solid #d3d1c7",background:"#f1efe8"};
+  const td={padding:"9px 14px",borderBottom:"1px solid #e8e6e0",fontSize:13};
+  const card={background:"#fff",borderRadius:12,border:"1px solid #d3d1c7",overflow:"hidden",marginBottom:0};
+  const TAB=(id,label)=><button onClick={()=>setTab(id)} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:tab===id?"#534AB7":"transparent",color:tab===id?"#fff":"#73726c"}}>{label}</button>;
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{fontSize:22,fontWeight:600,marginBottom:2}}>Sales HQ</h1>
+          <p style={{fontSize:13,color:"#73726c"}}>{CURRENT_YEAR} · {fmtFull(totalRev)} closed · {fmtFull(totalPipeline)} in pipeline</p>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          {isAdmin&&<Btn variant="secondary" onClick={()=>setAddSpModal(true)}>+ Add rep</Btn>}
+          <div style={{display:"flex",gap:4,background:"#f1efe8",borderRadius:10,padding:4}}>
+            {TAB("leaderboard","Sales Leaderboard")}
+            {TAB("seeds","Seeds / Pipeline")}
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <span style={{fontSize:13,color:"#73726c"}}>Logged in as <b style={{color:"#2c2c2a",fontWeight:500}}>{currentUser.name}</b>{isAdmin&&<span style={{marginLeft:6,fontSize:11,background:"#534AB722",color:"#534AB7",border:"1px solid #534AB744",borderRadius:5,padding:"1px 6px"}}>admin</span>}</span>
+        <Btn variant="ghost" style={{fontSize:12,padding:"4px 8px"}} onClick={handleLogout}>Log out</Btn>
+      </div>
+
+      <div style={{marginBottom:16,position:"relative"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search wins, seeds, clients, reps..."
+          style={{width:"100%",padding:"11px 14px 11px 40px",borderRadius:10,border:"2px solid #B4B2A9",background:"#E8E6E0",color:"#2C2C2A",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#888",fontSize:16,pointerEvents:"none"}}>⌕</span>
+        {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:18}}>×</button>}
+      </div>
+
+      {searchResults&&(
+        <div style={{...card,marginBottom:20}}>
+          <div style={{padding:"10px 16px",borderBottom:"1px solid #d3d1c7",fontSize:13,color:"#73726c",fontWeight:500}}>{searchResults.wins.length+searchResults.seeds.length} result{searchResults.wins.length+searchResults.seeds.length!==1?"s":""} for "{search}"</div>
+          {searchResults.wins.length>0&&<>
+            <div style={{padding:"8px 16px 4px",fontSize:11,fontWeight:600,color:"#9c9a92",textTransform:"uppercase",letterSpacing:"0.05em"}}>Closed wins</div>
+            {searchResults.wins.map(w=>(
+              <div key={w.id} style={{padding:"8px 16px",borderBottom:"1px solid #e8e6e0",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",fontSize:13}}>
+                <span style={{fontWeight:500,minWidth:70,color:"#8B7FD4"}}>{w.salesperson}</span>
+                <span style={{flex:1}}>{hl(w.item,search)}</span>
+                <span style={{color:"#639922",fontWeight:500}}>{fmtFull(w.revenue)}</span>
+                <span style={{color:"#73726c"}}>{hl(w.notes,search)}</span>
+                <span style={{color:"#9c9a92",fontSize:12}}>{w.date} · {w.year}</span>
+              </div>
+            ))}
+          </>}
+          {searchResults.seeds.length>0&&<>
+            <div style={{padding:"8px 16px 4px",fontSize:11,fontWeight:600,color:"#9c9a92",textTransform:"uppercase",letterSpacing:"0.05em"}}>Seeds / pipeline</div>
+            {searchResults.seeds.map(s=>(
+              <div key={s.id} style={{padding:"8px 16px",borderBottom:"1px solid #e8e6e0",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",fontSize:13}}>
+                <span style={{fontWeight:500,minWidth:70,color:"#3B8BD4"}}>{s.salesperson}</span>
+                <span style={{fontWeight:500}}>{hl(s.client,search)}</span>
+                <span style={{flex:1}}>{hl(s.item,search)}</span>
+                <span style={{color:"#3B8BD4",fontWeight:500}}>{fmtFull(s.price)}</span>
+                <span style={{color:"#73726c",fontSize:12}}>{s.timeframe}</span>
+              </div>
+            ))}
+          </>}
+          {!searchResults.wins.length&&!searchResults.seeds.length&&<div style={{padding:16,fontSize:13,color:"#73726c"}}>No results found.</div>}
+        </div>
+      )}
+
+      {tab==="leaderboard"&&!searchResults&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+            <Btn variant="win" onClick={()=>{setWinForm({...emptyWin,salesperson:isAdmin?activeSpNames[0]:currentUser.name});setWinModal({mode:"add"});}}>+ Log a win</Btn>
+          </div>
+          <div style={{display:"flex",background:"#fff",borderRadius:12,border:"1px solid #d3d1c7",marginBottom:16,overflow:"hidden",flexWrap:"wrap"}}>
+            {[{label:"Total closed revenue",val:fmtFull(totalRev),color:"#639922"},{label:"Total wins",val:currentWins.length,color:"#2c2c2a"},{label:"Active pipeline",val:fmtFull(totalPipeline),color:"#3B8BD4"},{label:"Seeds in play",val:seeds.length,color:"#8B7FD4"}].map((s,i)=>(
+              <div key={i} style={{flex:1,minWidth:120,padding:"14px 16px",borderRight:i<3?"1px solid #d3d1c7":"none"}}>
+                <div style={{fontSize:11,color:"#9c9a92",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+                <div style={{fontSize:20,fontWeight:600,color:s.color}}>{s.val}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"grid",gap:10}}>
+            {stats.length===0&&<div style={{textAlign:"center",padding:40,color:"#73726c",fontSize:14}}>No active reps with wins in the past 6 months.</div>}
+            {stats.map((rep,i)=>{
+              const isOpen=expanded[rep.name];
+              const medals=["🥇","🥈","🥉"];
+              const repAYears=Object.keys(archivedMap[rep.name]||{}).map(Number).sort((a,b)=>b-a);
+              return (
+                <div key={rep.name} style={card}>
+                  <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <span style={{fontSize:18,width:26}}>{medals[i]||`#${i+1}`}</span>
+                    <span style={{fontWeight:600,fontSize:15,flex:1,minWidth:80}}>{rep.name}</span>
+                    <div style={{display:"flex",gap:16,fontSize:13,flexWrap:"wrap",alignItems:"center"}}>
+                      <span><b style={{fontWeight:500}}>{rep.wonCount}</b> <span style={{color:"#73726c"}}>win{rep.wonCount!==1?"s":""}</span></span>
+                      <span style={{fontWeight:600,color:"#639922",fontSize:15}}>{fmt(rep.totalRev)}</span>
+                      <span style={{color:"#73726c",fontSize:12}}>pipeline: <span style={{color:"#3B8BD4",fontWeight:500}}>{fmt(rep.pipeline)}</span></span>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      {canEdit(rep.name)&&<Btn variant="win" style={{padding:"4px 10px",fontSize:12}} onClick={()=>{setWinForm({...emptyWin,salesperson:rep.name});setWinModal({mode:"add"});}}>+ Win</Btn>}
+                      <Btn variant="ghost" style={{padding:"4px 8px",fontSize:12}} onClick={()=>tog(rep.name)}>{isOpen?"▲ Hide":"▼ Show"}</Btn>
+                    </div>
+                  </div>
+                  <div style={{height:4,background:"#f1efe8",margin:"0 16px"}}>
+                    <div style={{width:`${(rep.totalRev/maxRev)*100}%`,height:"100%",background:i===0?"#534AB7":i===1?"#8B7FD4":"#AFA9EC",borderRadius:2,transition:"width 0.4s"}}/>
+                  </div>
+                  {isOpen&&<div style={{borderTop:"1px solid #d3d1c7",marginTop:10}}>
+                    {rep.wins.length===0
+                      ?<div style={{padding:"12px 16px",fontSize:13,color:"#73726c"}}>No wins this year yet.</div>
+                      :<table><thead><tr>{["Client","What was sold","Revenue","Date","Notes",""].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+                        <tbody>{rep.wins.map(w=>(
+                          <tr key={w.id}>
+                            <td style={td}>{w.notes||"—"}</td><td style={td}>{w.item}</td>
+                            <td style={{...td,color:"#639922",fontWeight:500}}>{fmtFull(w.revenue)}</td>
+                            <td style={{...td,color:"#73726c"}}>{w.date}</td>
+                            <td style={{...td,color:"#73726c"}}>{w.extra_notes||"—"}</td>
+                            <td style={{...td,whiteSpace:"nowrap"}}>
+                              {canEdit(rep.name)&&<><Btn variant="ghost" style={{padding:"2px 6px",fontSize:11}} onClick={()=>{setWinForm({...w,extraNotes:w.extra_notes||""});setWinModal({mode:"edit",id:w.id});}}>Edit</Btn>
+                              <Btn variant="danger" style={{padding:"2px 6px",fontSize:11,marginLeft:4}} onClick={()=>setDeleteConfirm({type:"win",id:w.id})}>✕</Btn></>}
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    }
+                    {repAYears.map(yr=>{
+                      const aw=archivedMap[rep.name][yr]||[];
+                      const ar=aw.reduce((a,w)=>a+(Number(w.revenue)||0),0);
+                      const ak=`${rep.name}-${yr}`;
+                      const ao=archiveExpanded[ak];
+                      return <div key={yr} style={{borderTop:"1px solid #d3d1c7"}}>
+                        <div onClick={()=>togA(ak)} style={{padding:"10px 16px",display:"flex",gap:16,alignItems:"center",cursor:"pointer",background:"#FAEEDA",flexWrap:"wrap"}}>
+                          <span style={{fontSize:12,color:"#73726c",fontWeight:500}}>📁 Year: {yr}</span>
+                          <span style={{fontSize:12,color:"#73726c"}}>Total wins: {aw.length}</span>
+                          <span style={{fontSize:12,color:"#854F0B",fontWeight:500}}>Total revenue: {fmtFull(ar)}</span>
+                          <span style={{fontSize:11,color:"#9c9a92",marginLeft:"auto"}}>{ao?"▲ collapse":"▼ expand"}</span>
+                        </div>
+                        {ao&&<table><thead><tr>{["Client","What was sold","Revenue","Date","Notes",""].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+                          <tbody>{aw.map(w=>(
+                            <tr key={w.id}><td style={td}>{w.notes||"—"}</td><td style={td}>{w.item}</td>
+                              <td style={{...td,color:"#854F0B",fontWeight:500}}>{fmtFull(w.revenue)}</td>
+                              <td style={{...td,color:"#73726c"}}>{w.date}</td><td style={{...td,color:"#73726c"}}>{w.extra_notes||"—"}</td>
+                              <td style={{...td,whiteSpace:"nowrap"}}>{isAdmin&&<Btn variant="ghost" style={{padding:"2px 6px",fontSize:11}} onClick={()=>setArchiveEditConfirm({win:w,onConfirm:()=>{setWinForm({...w,extraNotes:w.extra_notes||""});setWinModal({mode:"editArchive",id:w.id});}})}>Edit</Btn>}</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>}
+                      </div>;
+                    })}
+                  </div>}
+                </div>
+              );
+            })}
+          </div>
+          {salespeople.filter(sp=>sp.retired).length>0&&<div style={{marginTop:24}}>
+            <div style={{fontSize:12,color:"#9c9a92",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Retired reps</div>
+            {salespeople.filter(sp=>sp.retired).map(sp=>{
+              const ry=Object.keys(archivedMap[sp.name]||{}).map(Number).sort((a,b)=>b-a);
+              const io=expanded[`r-${sp.name}`];
+              return <div key={sp.name} style={{...card,marginBottom:8,opacity:0.75}}>
+                <div style={{padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:500,color:"#73726c"}}>{sp.name} <span style={{fontSize:11,background:"#f1efe8",borderRadius:4,padding:"1px 6px",marginLeft:6}}>retired</span></span>
+                  <Btn variant="ghost" style={{padding:"2px 8px",fontSize:12}} onClick={()=>tog(`r-${sp.name}`)}>{io?"▲ Hide":"▼ View history"}</Btn>
+                </div>
+                {io&&ry.map(yr=>{
+                  const aw=archivedMap[sp.name][yr]||[];
+                  const ar=aw.reduce((a,w)=>a+(Number(w.revenue)||0),0);
+                  const ak=`r-${sp.name}-${yr}`;const ao=archiveExpanded[ak];
+                  return <div key={yr} style={{borderTop:"1px solid #d3d1c7"}}>
+                    <div onClick={()=>togA(ak)} style={{padding:"9px 16px",display:"flex",gap:16,cursor:"pointer",background:"#FAEEDA",flexWrap:"wrap",alignItems:"center"}}>
+                      <span style={{fontSize:12,fontWeight:500,color:"#73726c"}}>📁 Year: {yr}</span>
+                      <span style={{fontSize:12,color:"#73726c"}}>Wins: {aw.length}</span>
+                      <span style={{fontSize:12,color:"#854F0B",fontWeight:500}}>Revenue: {fmtFull(ar)}</span>
+                      <span style={{fontSize:11,color:"#9c9a92",marginLeft:"auto"}}>{ao?"▲":"▼"}</span>
+                    </div>
+                    {ao&&<table><thead><tr>{["Client","Item","Revenue","Date"].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+                      <tbody>{aw.map(w=><tr key={w.id}><td style={td}>{w.notes||"—"}</td><td style={td}>{w.item}</td><td style={{...td,color:"#854F0B"}}>{fmtFull(w.revenue)}</td><td style={{...td,color:"#73726c"}}>{w.date}</td></tr>)}</tbody>
+                    </table>}
+                  </div>;
+                })}
+              </div>;
+            })}
+          </div>}
+          {isAdmin&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:32,paddingTop:16,borderTop:"1px solid #d3d1c7"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:"#73726c"}}>Retire a rep:</span>
+              <select defaultValue="" onChange={e=>{if(!e.target.value)return;setRetireModal({name:e.target.value,step:1});setRetirePin("");setRetirePinErr("");e.target.value="";}}
+                style={{padding:"6px 10px",borderRadius:8,border:"1px solid #d3d1c7",background:"#f1efe8",color:"#73726c",fontSize:13,cursor:"pointer"}}>
+                <option value="" disabled>Select rep…</option>
+                {salespeople.filter(sp=>!sp.retired).map(sp=><option key={sp.name} value={sp.name}>{sp.name}</option>)}
+              </select>
+            </div>
+          </div>}
+        </div>
+      )}
+
+      {tab==="seeds"&&!searchResults&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+            <p style={{margin:0,fontSize:13,color:"#73726c"}}>{seeds.length} open seed{seeds.length!==1?"s":""} · {fmtFull(totalPipeline)} potential</p>
+            <Btn onClick={()=>{setSeedForm({...emptySeed,salesperson:isAdmin?activeSpNames[0]:currentUser.name});setSeedModal({mode:"add"});}}>+ Add seed</Btn>
+          </div>
+          {seeds.length===0?<div style={{textAlign:"center",padding:40,color:"#73726c"}}>No seeds yet.</div>
+          :<div style={{display:"grid",gap:10}}>
+            {activeSpNames.filter(sp=>seeds.some(s=>s.salesperson===sp)).map(sp=>{
+              const ss=seeds.filter(s=>s.salesperson===sp);
+              const pot=ss.reduce((a,s)=>a+(Number(s.price)||0),0);
+              const io=expanded[`seed-${sp}`];
+              return <div key={sp} style={card}>
+                <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:600,fontSize:15,flex:1}}>{sp}</span>
+                  <div style={{display:"flex",gap:20,fontSize:13,alignItems:"center",flexWrap:"wrap"}}>
+                    <span><b style={{fontWeight:500}}>{ss.length}</b> <span style={{color:"#73726c"}}>seed{ss.length!==1?"s":""}</span></span>
+                    <span style={{fontWeight:600,color:"#3B8BD4",fontSize:15}}>{pot?fmtFull(pot):"—"} <span style={{fontWeight:400,fontSize:12,color:"#73726c"}}>potential</span></span>
+                  </div>
+                  <Btn variant="ghost" style={{padding:"4px 8px",fontSize:12}} onClick={()=>tog(`seed-${sp}`)}>{io?"▲ Hide":"▼ Show"}</Btn>
+                </div>
+                {io&&<div style={{borderTop:"1px solid #d3d1c7"}}>
+                  <table><thead><tr>{["Client","What was proposed","Price","Timeframe","Notes",""].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>{ss.map(s=>(
+                      <tr key={s.id} style={{borderBottom:"1px solid #e8e6e0"}}>
+                        <td style={td}>{s.client||"—"}</td><td style={td}>{s.item}</td>
+                        <td style={{...td,color:"#3B8BD4",fontWeight:500}}>{s.price?fmtFull(s.price):"—"}</td>
+                        <td style={{...td,color:"#73726c"}}>{s.timeframe||"—"}</td>
+                        <td style={{...td,color:"#73726c",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.notes||"—"}</td>
+                        <td style={{...td,whiteSpace:"nowrap"}}>
+                          {canEdit(sp)&&<><Btn variant="ghost" style={{padding:"2px 6px",fontSize:11}} onClick={()=>{setSeedForm({...s});setSeedModal({mode:"edit",id:s.id});}}>Edit</Btn>
+                          <Btn variant="danger" style={{padding:"2px 6px",fontSize:11,marginLeft:4}} onClick={()=>setDeleteConfirm({type:"seed",id:s.id})}>✕</Btn></>}
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>}
+              </div>;
+            })}
+          </div>}
+        </div>
+      )}
+
+      {winModal&&<Modal title={winModal.mode==="add"?"Log a win 🎉":"Edit win"} onClose={()=>setWinModal(null)}>
+        {isAdmin&&<DField label="Sales rep"><select value={winForm.salesperson} onChange={e=>setWinForm(f=>({...f,salesperson:e.target.value}))} style={dkIn}>{activeSpNames.map(sp=><option key={sp}>{sp}</option>)}</select></DField>}
+        <DField label={<>Client name (Last, First) <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:winForm.clientError?"#E24B4A":"#444"}} placeholder="e.g. Smith, John" value={winForm.notes||""} onChange={e=>setWinForm(f=>({...f,notes:e.target.value,clientError:false}))} autoFocus/>
+          {winForm.clientError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label={<>Revenue ($) <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:winForm.revenueError?"#E24B4A":"#444"}} type="number" placeholder="e.g. 12000" value={winForm.revenue||""} onChange={e=>setWinForm(f=>({...f,revenue:e.target.value,revenueError:false}))}/>
+          {winForm.revenueError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label={<>What was sold <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:winForm.itemError?"#E24B4A":"#444"}} placeholder="e.g. Pond renovation" value={winForm.item||""} onChange={e=>setWinForm(f=>({...f,item:e.target.value,itemError:false}))}/>
+          {winForm.itemError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label="Notes (optional)"><textarea style={{...dkIn,resize:"vertical"}} rows={2} value={winForm.extraNotes||""} onChange={e=>setWinForm(f=>({...f,extraNotes:e.target.value}))}/></DField>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <Btn variant="secondary" onClick={()=>setWinModal(null)}>Cancel</Btn>
+          <Btn onClick={winModal.mode==="editArchive"?saveArchiveEdit:saveWin} disabled={saving}>{saving?"Saving...":winModal.mode==="add"?"Log win":"Save"}</Btn>
+        </div>
+      </Modal>}
+
+      {seedModal&&<Modal title={seedModal.mode==="add"?"New seed":"Edit seed"} onClose={()=>setSeedModal(null)}>
+        {isAdmin&&<DField label="Sales rep"><select value={seedForm.salesperson} onChange={e=>setSeedForm(f=>({...f,salesperson:e.target.value}))} style={dkIn}>{activeSpNames.map(sp=><option key={sp}>{sp}</option>)}</select></DField>}
+        <DField label={<>Client name (Last, First) <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:seedForm.clientError?"#E24B4A":"#444"}} placeholder="e.g. Smith, John" value={seedForm.client||""} onChange={e=>setSeedForm(f=>({...f,client:e.target.value,clientError:false}))} autoFocus/>
+          {seedForm.clientError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label={<>What was proposed <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:seedForm.itemError?"#E24B4A":"#444"}} placeholder="e.g. Stream renovation" value={seedForm.item||""} onChange={e=>setSeedForm(f=>({...f,item:e.target.value,itemError:false}))}/>
+          {seedForm.itemError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label={<>Timeframe to close <span style={{color:"#E24B4A"}}>*</span></>}>
+          <input style={{...dkIn,borderColor:seedForm.timeframeError?"#E24B4A":"#444"}} placeholder="e.g. Q3 2026" value={seedForm.timeframe||""} onChange={e=>setSeedForm(f=>({...f,timeframe:e.target.value,timeframeError:false}))}/>
+          {seedForm.timeframeError&&<p style={{color:"#E24B4A",fontSize:12,margin:"4px 0 0"}}>Required</p>}
+        </DField>
+        <DField label="Price (optional)"><input style={dkIn} type="number" placeholder="e.g. 9500" value={seedForm.price||""} onChange={e=>setSeedForm(f=>({...f,price:e.target.value}))}/></DField>
+        <DField label="Notes (optional)"><textarea style={{...dkIn,resize:"vertical"}} rows={2} value={seedForm.notes||""} onChange={e=>setSeedForm(f=>({...f,notes:e.target.value}))}/></DField>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <Btn variant="secondary" onClick={()=>setSeedModal(null)}>Cancel</Btn>
+          <Btn onClick={saveSeed} disabled={saving}>{saving?"Saving...":seedModal.mode==="add"?"Add seed":"Save"}</Btn>
+        </div>
+      </Modal>}
+
+      {addSpModal&&<Modal title="Add sales rep" onClose={()=>{setAddSpModal(false);setNewSpName("");}}>
+        <DField label="Full name"><input style={dkIn} placeholder="e.g. Chris T" value={newSpName} onChange={e=>setNewSpName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSalesperson()} autoFocus/></DField>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <Btn variant="secondary" onClick={()=>{setAddSpModal(false);setNewSpName("");}}>Cancel</Btn>
+          <Btn onClick={addSalesperson} disabled={saving}>{saving?"Saving...":"Add rep"}</Btn>
+        </div>
+      </Modal>}
+
+      {retireModal?.step===1&&<Modal title="Enter admin PIN" onClose={()=>setRetireModal(null)}>
+        <p style={{color:"#aaa",fontSize:14,marginTop:0}}>Enter the admin PIN to retire <b style={{color:"#fff"}}>{retireModal.name}</b>.</p>
+        <DField label="Admin PIN"><input style={dkIn} type="password" value={retirePin} onChange={e=>{setRetirePin(e.target.value);setRetirePinErr("");}} autoFocus onKeyDown={e=>e.key==="Enter"&&(retirePin===ADMIN_PIN?setRetireModal({...retireModal,step:2}):setRetirePinErr("Incorrect PIN."))}/></DField>
+        {retirePinErr&&<p style={{color:"#E24B4A",fontSize:13,marginTop:-8}}>{retirePinErr}</p>}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <Btn variant="secondary" onClick={()=>setRetireModal(null)}>Cancel</Btn>
+          <Btn onClick={()=>{if(retirePin!==ADMIN_PIN){setRetirePinErr("Incorrect PIN.");return;}setRetireModal({...retireModal,step:2});}}>Continue</Btn>
+        </div>
+      </Modal>}
+
+      {retireModal?.step===2&&<Modal title="Are you sure?" onClose={()=>setRetireModal(null)} dark={false}>
+        <p style={{fontSize:14,marginTop:0}}>Are you sure you want to retire <b>{retireModal.name}</b>? All their data will be archived.</p>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+          <Btn variant="secondary" onClick={()=>setRetireModal(null)}>Cancel</Btn>
+          <Btn variant="danger" onClick={()=>retireSalesperson(retireModal.name)} disabled={saving}>{saving?"Working...":"Approve removal"}</Btn>
+        </div>
+      </Modal>}
+
+      {archiveEditConfirm&&<Modal title="Edit archived data?" onClose={()=>setArchiveEditConfirm(null)} dark={false}>
+        <p style={{fontSize:14,marginTop:0}}>Are you sure you want to edit past archived data? <b>This will impact records and commissions paid.</b></p>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+          <Btn variant="secondary" onClick={()=>setArchiveEditConfirm(null)}>No, cancel</Btn>
+          <Btn variant="warn" onClick={()=>{archiveEditConfirm.onConfirm();setArchiveEditConfirm(null);}}>Yes, edit anyway</Btn>
+        </div>
+      </Modal>}
+
+      {deleteConfirm&&<Modal title="Are you sure?" onClose={()=>setDeleteConfirm(null)} dark={false}>
+        <p style={{fontSize:14,marginTop:0}}>This will permanently delete this {deleteConfirm.type}. This cannot be undone.</p>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+          <Btn variant="secondary" onClick={()=>setDeleteConfirm(null)}>Cancel</Btn>
+          <Btn variant="danger" onClick={confirmDelete} disabled={saving}>{saving?"Deleting...":"Delete"}</Btn>
+        </div>
+      </Modal>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
